@@ -18,6 +18,9 @@ class Card(Base):
     rarity = Column(String(64))
     supertype = Column(String(32))  # Pokemon, Trainer, Energy
     updated_at = Column(Date)
+    signal = Column(String(16))  # buy, sell, hold
+    signal_type = Column(String(32))  # buy_dip, rising, declining, sell_opportunity, hold
+    signal_reason = Column(String(256))  # human-readable explainer
 
 
 class PriceSnapshot(Base):

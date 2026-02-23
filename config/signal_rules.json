@@ -1,0 +1,30 @@
+{
+  "rules": [
+    {
+      "type": "buy_dip",
+      "signal": "buy",
+      "condition": "price < 0.9 * avg_30",
+      "thresholds": {"buy_dip_ratio": 0.9}
+    },
+    {
+      "type": "sell_opportunity",
+      "signal": "sell",
+      "condition": "price > 1.2 * avg_30",
+      "thresholds": {"sell_premium_ratio": 1.2}
+    },
+    {
+      "type": "rising",
+      "signal": "buy",
+      "condition": "price_change_7d_pct > 5",
+      "thresholds": {"rising_min_pct": 5}
+    },
+    {
+      "type": "declining",
+      "signal": "sell",
+      "condition": "price_change_30d_pct < -10",
+      "thresholds": {"declining_max_pct": -10}
+    }
+  ],
+  "default_signal": "hold",
+  "default_signal_type": "hold"
+}

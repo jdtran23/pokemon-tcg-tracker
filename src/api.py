@@ -5,13 +5,17 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from config.settings import TCGDEX_BASE_URL
 from src.db import get_session, init_db
 from src.models import Card, PriceSnapshot
 from src.fetcher import run_fetch
+from src.trends import compute_trends
+from src.alerts import get_triggered_alerts
 
 app = FastAPI(
     title="Pokemon TCG Tracker API",
@@ -30,6 +34,7 @@ app.add_middleware(
 
 WATCHLIST_PATH = Path(__file__).resolve().parent.parent / "config" / "watchlist.json"
 WATCHLIST_MAX = 200
+ALERTS_PATH = Path(__file__).resolve().parent.parent / "config" / "alerts.json"
 
 
 def _image_url_for_card(card: Card) -> Optional[str]:
@@ -75,6 +80,53 @@ def refresh_prices():
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/search")
+def search_cards(q: str, limit: int = 15):
+    """Search cards by name via TCGdex. Returns id, name, set_id, set_name, image_url for selection."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"cards": []}
+    try:
+        r = requests.get(
+            f"{TCGDEX_BASE_URL}/cards",
+            params={"name": q, "pagination:page": 1, "pagination:itemsPerPage": min(limit, 30)},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            return {"cards": []}
+        raw = r.json()
+        if not isinstance(raw, list):
+            return {"cards": []}
+        cards = []
+        for c in raw:
+            cid = c.get("id", "")
+            if not cid:
+                continue
+            set_info = c.get("set") or {}
+            set_id = set_info.get("id", "")
+            if not set_id and "-" in cid:
+                set_id = cid.rsplit("-", 1)[0]
+            img = c.get("image")
+            if not img and set_id:
+                num = c.get("localId", "")
+                if num:
+                    series = re.match(r"^([a-zA-Z]+)", set_id)
+                    if series:
+                        img = f"https://assets.tcgdex.net/en/{series.group(1)}/{set_id}/{num}"
+            cards.append(
+                {
+                    "id": cid,
+                    "name": c.get("name", ""),
+                    "set_id": set_id,
+                    "set_name": set_info.get("name", ""),
+                    "image_url": img,
+                }
+            )
+        return {"cards": cards}
+    except requests.RequestException:
+        return {"cards": []}
 
 
 @app.get("/api/watchlist")
@@ -176,6 +228,7 @@ def get_cards():
                     "mid": latest.mid,
                     "high": latest.high,
                 }
+            trends = compute_trends(c.id, session)
             result.append(
                 {
                     "id": c.id,
@@ -187,6 +240,10 @@ def get_cards():
                     "supertype": c.supertype,
                     "image_url": _image_url_for_card(c),
                     "latest_price": prices,
+                    "trends": trends,
+                    "signal": c.signal or "hold",
+                    "signal_type": c.signal_type or "hold",
+                    "signal_reason": c.signal_reason or "",
                 }
             )
         return {"cards": result}
@@ -222,6 +279,7 @@ def get_card(card_id: str):
                 "high": latest.high,
             }
 
+        trends = compute_trends(card.id, session)
         return {
             "id": card.id,
             "name": card.name,
@@ -232,9 +290,106 @@ def get_card(card_id: str):
             "supertype": card.supertype,
             "image_url": _image_url_for_card(card),
             "latest_price": prices,
+            "trends": trends,
+            "signal": card.signal or "hold",
+            "signal_type": card.signal_type or "hold",
+            "signal_reason": card.signal_reason or "",
         }
     finally:
         session.close()
+
+
+@app.get("/api/cards/{card_id}/trends")
+def get_card_trends(card_id: str):
+    """Get trend metrics for a card: price_change_7d_pct, price_change_30d_pct, trend."""
+    init_db()
+    session = get_session()
+    try:
+        card = session.query(Card).filter(Card.id == card_id).first()
+        if not card:
+            raise HTTPException(status_code=404, detail="Card not found")
+        return {"card_id": card_id, **compute_trends(card_id, session)}
+    finally:
+        session.close()
+
+
+@app.get("/api/alerts")
+def get_alerts():
+    """Return user alerts that are currently triggered (in-app check on load/refresh)."""
+    init_db()
+    session = get_session()
+    try:
+        # Build cards_by_id from catalog for alert checks
+        cards = session.query(Card).all()
+        cards_by_id = {}
+        for c in cards:
+            latest = (
+                session.query(PriceSnapshot)
+                .filter(PriceSnapshot.card_id == c.id)
+                .order_by(PriceSnapshot.snapshot_date.desc())
+                .first()
+            )
+            cards_by_id[c.id] = {
+                "latest_price": {
+                    "market": latest.market,
+                    "mid": latest.mid,
+                    "low": latest.low,
+                } if latest else None,
+            }
+        triggered = get_triggered_alerts(session, cards_by_id)
+        return {"alerts": triggered}
+    finally:
+        session.close()
+
+
+class AddAlert(BaseModel):
+    card_id: str
+    card_name: str = ""
+    condition: str  # price_below, price_above, change_7d_above_pct, etc.
+    value: float
+
+
+@app.post("/api/alerts")
+def add_alert(body: AddAlert):
+    """Add a user alert. Requires card_id, condition, value."""
+    import uuid
+    path = ALERTS_PATH
+    data = {"alerts": []}
+    if path.exists():
+        with open(path) as f:
+            data = json.load(f)
+    alerts = data.get("alerts", [])
+    new_id = f"alert-{uuid.uuid4().hex[:8]}"
+    alerts.append({
+        "id": new_id,
+        "card_id": body.card_id,
+        "card_name": body.card_name or body.card_id,
+        "condition": body.condition,
+        "value": body.value,
+        "enabled": True,
+    })
+    data["alerts"] = alerts
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    return {"status": "ok", "id": new_id}
+
+
+@app.delete("/api/alerts")
+def remove_alert(alert_id: str):
+    """Remove an alert by id."""
+    path = ALERTS_PATH
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No alerts configured")
+    with open(path) as f:
+        data = json.load(f)
+    alerts = [a for a in data.get("alerts", []) if a.get("id") != alert_id]
+    if len(alerts) == len(data.get("alerts", [])):
+        raise HTTPException(status_code=404, detail="Alert not found")
+    data["alerts"] = alerts
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    return {"status": "ok"}
 
 
 @app.get("/api/prices/{card_id}")

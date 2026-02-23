@@ -1,0 +1,28 @@
+{
+  "alerts": [
+    {
+      "id": "alert-1",
+      "card_id": "swsh4-25",
+      "card_name": "Charizard",
+      "condition": "price_below",
+      "value": 5,
+      "enabled": true
+    },
+    {
+      "id": "alert-2",
+      "card_id": "swsh4-25",
+      "card_name": "Charizard",
+      "condition": "price_above",
+      "value": 10,
+      "enabled": true
+    },
+    {
+      "id": "alert-3",
+      "card_id": "swsh7-169",
+      "card_name": "Flareon V",
+      "condition": "change_7d_above_pct",
+      "value": 10,
+      "enabled": true
+    }
+  ]
+}

@@ -50,6 +50,11 @@ python scripts/run_api.py
 Serves at http://localhost:8000. Docs at http://localhost:8000/docs.
 
 **Endpoints:**
+- `GET /api/search?q=charizard&limit=15` – search cards by name (for add flow)
+- `GET /api/cards/{id}/trends` – trend metrics for a card
+- `GET /api/alerts` – triggered user alerts (in-app)
+- `POST /api/alerts` – add alert (body: card_id, card_name, condition, value)
+- `DELETE /api/alerts?alert_id=` – remove alert
 - `GET /api/watchlist` – card IDs and card names in your watchlist
 - `POST /api/watchlist` – add a card (body: `{"card_id": "swsh4-25"}` or `{"card_name": "Charizard ex"}`)
 - `DELETE /api/watchlist` – remove a card (`?card_id=...` or `?card_name=...`)
@@ -78,13 +83,23 @@ Or run manually when your machine is on.
 
 See **GUIDE-FOR-NON-TECHNICAL-USERS.md** for simple instructions on adding and removing cards.
 
+## Buy/Sell Signals
+
+The app computes trend metrics and buy/sell signals after each refresh:
+
+- **Trends:** `price_change_7d_pct`, `price_change_30d_pct`, `trend` (rising|stable|declining)
+- **Signals:** `signal` (buy|sell|hold), `signal_type` (buy_dip, rising, declining, sell_opportunity)
+- **Alerts:** User-configurable price/trend alerts; GET `/api/alerts` returns triggered ones
+
+Rules are in `config/signal_rules.json`. Copy `config/alerts.example.json` to `config/alerts.json` to define alerts.
+
 ## Roadmap
 
 - [ ] PSA population scraper
 - [ ] PriceCharting scraper (graded + sealed)
 - [ ] TCGPlayer sealed scraper
-- [ ] Trend analytics (7d/30d/90d, rising/declining)
-- [ ] CLI or simple UI for decisions
+- [x] Trend analytics (7d/30d/90d, rising/declining)
+- [x] Buy/sell signal markers
 
 ## License
 

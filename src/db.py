@@ -25,6 +25,18 @@ def init_db():
             conn.commit()
     except Exception:
         pass  # column already exists
+    # Migration: add signal columns for buy/sell markers
+    for col_name, col_type in [
+        ("signal", "VARCHAR(16)"),
+        ("signal_type", "VARCHAR(32)"),
+        ("signal_reason", "VARCHAR(256)"),
+    ]:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(f"ALTER TABLE cards ADD COLUMN {col_name} {col_type}"))
+                conn.commit()
+        except Exception:
+            pass  # column already exists
 
 
 def get_session():

@@ -14,6 +14,7 @@ from config.settings import (
 )
 from src.db import get_session, init_db
 from src.models import Card, PriceSnapshot
+from src.signals import update_card_signals
 
 
 def _normalize_tcgdex_to_internal(tcgdex: dict) -> dict:
@@ -366,4 +367,10 @@ def run_fetch(watchlist_path: Optional[Path] = None, debug: bool = False) -> int
     for c in cards:
         save_card_prices(c["id"], c)
         saved += 1
+    # Compute and persist buy/sell signals after refresh
+    session = get_session()
+    try:
+        update_card_signals(session)
+    finally:
+        session.close()
     return saved
