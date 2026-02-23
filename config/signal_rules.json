@@ -1,6 +1,12 @@
 {
   "rules": [
     {
+      "type": "strong_buy",
+      "signal": "buy",
+      "condition": "price < 0.95*avg_30 AND change_7d > 0",
+      "thresholds": {"dip_ratio": 0.95, "momentum_min_pct": 0}
+    },
+    {
       "type": "buy_dip",
       "signal": "buy",
       "condition": "price < 0.9 * avg_30",
@@ -23,6 +29,30 @@
       "signal": "sell",
       "condition": "price_change_30d_pct < -10",
       "thresholds": {"declining_max_pct": -10}
+    },
+    {
+      "type": "weak_sell",
+      "signal": "sell",
+      "condition": "price_change_30d_pct < -5",
+      "thresholds": {"weak_sell_max_pct": -5}
+    },
+    {
+      "type": "hold_accumulate",
+      "signal": "hold",
+      "condition": "trend=stable AND price near avg_30",
+      "thresholds": {"near_low": 0.95, "near_high": 1.05}
+    },
+    {
+      "type": "dip_vs_avg7",
+      "signal": "buy",
+      "condition": "price < 0.95 * avg_7",
+      "thresholds": {"dip_avg7_ratio": 0.95}
+    },
+    {
+      "type": "below_direct_low",
+      "signal": "buy",
+      "condition": "market <= direct_low (rare but good deal)",
+      "thresholds": {}
     }
   ],
   "default_signal": "hold",

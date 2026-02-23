@@ -21,6 +21,7 @@ class Card(Base):
     signal = Column(String(16))  # buy, sell, hold
     signal_type = Column(String(32))  # buy_dip, rising, declining, sell_opportunity, hold
     signal_reason = Column(String(256))  # human-readable explainer
+    signal_contributing = Column(String(512))  # JSON array of other matching factors
 
 
 class PriceSnapshot(Base):

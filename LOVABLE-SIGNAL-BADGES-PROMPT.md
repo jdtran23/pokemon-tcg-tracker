@@ -1,6 +1,6 @@
-# Paste This Into Lovable to Add Buy/Sell Signal Badges
+# Paste This Into Lovable: Signal Badges Only
 
-Open your PokéMarket project in Lovable, then paste the text below into the chat. Lovable will add signal badges to each watchlist card.
+Add buy/sell signal badges to each watchlist card. For **full UI markers** (signals + trend percentages + tooltips), use **LOVABLE-UI-MARKERS-PROMPT.md** instead.
 
 ---
 
@@ -11,12 +11,12 @@ Open your PokéMarket project in Lovable, then paste the text below into the cha
 Display buy/sell signal badges on each watchlist card.
 
 **What to do:**
-- Each card from GET `/api/cards` now includes: `signal` ("buy", "sell", or "hold"), `signal_type` (e.g. "buy_dip", "rising", "declining", "sell_opportunity"), and `signal_reason` (short explainer text).
+- Each card from GET `/api/cards` includes: `signal` ("buy", "sell", or "hold"), `signal_type`, `signal_reason`, and `contributing_factors` (array of other matching factors).
 - Add a badge or label on each card tile to show the signal at a glance.
 - **Buy signals** (signal === "buy"): Show a green badge, e.g. "Buy dip", "Rising", or use signal_type for display. Use a positive/encouraging color (green).
 - **Sell signals** (signal === "sell"): Show an orange/amber badge, e.g. "Sell opportunity", "Declining". Use a caution color.
 - **Hold** (signal === "hold"): Show a neutral badge like "Hold" or "Stable" in gray, or omit the badge.
-- Optionally show `signal_reason` as a tooltip on hover or as smaller text under the badge so users understand why.
+- Show `signal_reason` as a tooltip on hover. If `contributing_factors` has items, append them (e.g. "Also: rising, below_direct_low").
 - Put the badge near the price or at the top of the card so it's visible at a glance.
 
 **Example layout for a card with buy signal:**
@@ -28,10 +28,15 @@ Display buy/sell signal badges on each watchlist card.
 ```
 
 **Signal type to display label mapping:**
+- strong_buy → "Strong buy"
+- below_direct_low → "Good deal"
 - buy_dip → "Buy dip"
+- dip_vs_avg7 → "7d dip"
 - rising → "Rising"
 - sell_opportunity → "Sell"
 - declining → "Declining"
+- weak_sell → "Consider sell"
+- hold_accumulate → "Hold"
 - hold → "Hold" or no badge
 
 ---

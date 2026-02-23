@@ -4,6 +4,23 @@ This guide is for using the Pokemon TCG tracker without any technical experience
 
 ---
 
+## Add Cards from Terminal (No Lovable Needed)
+
+If you want to add or remove cards without using Lovable (e.g. to save credits):
+
+1. Open **Terminal** (Mac) or **Command Prompt** (Windows).
+2. Go to the project: `cd Documents/PM-OS/pokemon-tcg-tracker`
+3. Add a card by name:
+   ```
+   .venv/bin/python scripts/add_card.py "Charizard ex"
+   ```
+4. Add multiple cards: `scripts/add_card.py "Pikachu" "Mewtwo"`
+5. Add by ID: `scripts/add_card.py --id swsh4-25`
+6. Remove a card: `scripts/remove_card.py "Charizard ex"`
+7. After adding, run: `.venv/bin/python scripts/run_fetch.py` to load prices.
+
+---
+
 ## Use Your PokéMarket App (Recommended)
 
 **To add this to your app:** Open the file **LOVABLE-ADD-REMOVE-CARDS-PROMPT.md** in this folder. Copy the prompt from that file and paste it into your Lovable project's chat. Lovable will add the buttons for you.

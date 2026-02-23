@@ -16,6 +16,7 @@ from src.models import Card, PriceSnapshot
 from src.fetcher import run_fetch
 from src.trends import compute_trends
 from src.alerts import get_triggered_alerts
+from src.signals import update_card_signals
 
 app = FastAPI(
     title="Pokemon TCG Tracker API",
@@ -35,6 +36,8 @@ app.add_middleware(
 WATCHLIST_PATH = Path(__file__).resolve().parent.parent / "config" / "watchlist.json"
 WATCHLIST_MAX = 200
 ALERTS_PATH = Path(__file__).resolve().parent.parent / "config" / "alerts.json"
+SIGNAL_RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "signal_rules.json"
+SIGNAL_OVERRIDES_PATH = Path(__file__).resolve().parent.parent / "config" / "signal_overrides.json"
 
 
 def _image_url_for_card(card: Card) -> Optional[str]:
@@ -68,6 +71,109 @@ def _save_watchlist(data: dict) -> None:
 def root():
     """Health check."""
     return {"status": "ok", "service": "pokemon-tcg-tracker"}
+
+
+@app.get("/api/signal-rules")
+def get_signal_rules():
+    """Return current signal rules and thresholds (user-adjustable)."""
+    if not SIGNAL_RULES_PATH.exists():
+        return {"rules": [], "default_signal": "hold", "default_signal_type": "hold"}
+    with open(SIGNAL_RULES_PATH) as f:
+        return json.load(f)
+
+
+class UpdateRuleThresholds(BaseModel):
+    rule_type: str
+    thresholds: dict
+
+
+@app.patch("/api/signal-rules")
+def update_signal_rule_thresholds(body: UpdateRuleThresholds):
+    """Update thresholds for a signal rule. Triggers re-compute on next refresh."""
+    if not SIGNAL_RULES_PATH.exists():
+        raise HTTPException(status_code=404, detail="Signal rules config not found")
+    with open(SIGNAL_RULES_PATH) as f:
+        data = json.load(f)
+    rules = data.get("rules", [])
+    updated = False
+    for r in rules:
+        if r.get("type") == body.rule_type:
+            r["thresholds"] = {**r.get("thresholds", {}), **body.thresholds}
+            updated = True
+            break
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Rule type '{body.rule_type}' not found")
+    with open(SIGNAL_RULES_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+    updated_rule = next(r for r in rules if r.get("type") == body.rule_type)
+    return {"status": "ok", "rule_type": body.rule_type, "thresholds": updated_rule["thresholds"]}
+
+
+@app.get("/api/signal-overrides")
+def get_signal_overrides():
+    """Return per-card rule overrides."""
+    if not SIGNAL_OVERRIDES_PATH.exists():
+        return {"overrides": []}
+    with open(SIGNAL_OVERRIDES_PATH) as f:
+        return json.load(f)
+
+
+class AddOverride(BaseModel):
+    card_id: str
+    rule_type: str
+    thresholds: dict
+
+
+@app.post("/api/signal-overrides")
+def add_signal_override(body: AddOverride):
+    """Add or update a per-card rule override. Merges with existing override for same card+rule."""
+    data = {"overrides": []}
+    if SIGNAL_OVERRIDES_PATH.exists():
+        with open(SIGNAL_OVERRIDES_PATH) as f:
+            data = json.load(f)
+    overrides = data.get("overrides", [])
+    # Remove existing override for same card+rule
+    overrides = [o for o in overrides if not (o.get("card_id") == body.card_id and o.get("rule_type") == body.rule_type)]
+    overrides.append({"card_id": body.card_id, "rule_type": body.rule_type, "thresholds": body.thresholds})
+    data["overrides"] = overrides
+    SIGNAL_OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(SIGNAL_OVERRIDES_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+    return {"status": "ok", "card_id": body.card_id, "rule_type": body.rule_type}
+
+
+@app.delete("/api/signal-overrides")
+def remove_signal_override(card_id: str = None, rule_type: str = None):
+    """Remove override(s). Provide card_id and/or rule_type to filter."""
+    if not SIGNAL_OVERRIDES_PATH.exists():
+        raise HTTPException(status_code=404, detail="No overrides configured")
+    with open(SIGNAL_OVERRIDES_PATH) as f:
+        data = json.load(f)
+    overrides = data.get("overrides", [])
+    if card_id and rule_type:
+        overrides = [o for o in overrides if not (o.get("card_id") == card_id and o.get("rule_type") == rule_type)]
+    elif card_id:
+        overrides = [o for o in overrides if o.get("card_id") != card_id]
+    elif rule_type:
+        overrides = [o for o in overrides if o.get("rule_type") != rule_type]
+    else:
+        raise HTTPException(status_code=400, detail="Provide card_id and/or rule_type")
+    data["overrides"] = overrides
+    with open(SIGNAL_OVERRIDES_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+    return {"status": "ok"}
+
+
+@app.post("/api/signals/recompute")
+def recompute_signals():
+    """Recompute buy/sell signals for all cards. No price fetch. Use after changing rules or overrides."""
+    init_db()
+    session = get_session()
+    try:
+        count = update_card_signals(session)
+        return {"status": "ok", "cards_updated": count}
+    finally:
+        session.close()
 
 
 @app.post("/api/refresh")
@@ -244,6 +350,7 @@ def get_cards():
                     "signal": c.signal or "hold",
                     "signal_type": c.signal_type or "hold",
                     "signal_reason": c.signal_reason or "",
+                    "contributing_factors": json.loads(c.signal_contributing) if c.signal_contributing else [],
                 }
             )
         return {"cards": result}
@@ -294,6 +401,7 @@ def get_card(card_id: str):
             "signal": card.signal or "hold",
             "signal_type": card.signal_type or "hold",
             "signal_reason": card.signal_reason or "",
+            "contributing_factors": json.loads(card.signal_contributing) if card.signal_contributing else [],
         }
     finally:
         session.close()

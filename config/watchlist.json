@@ -1,11 +1,15 @@
 {
-  "card_ids": ["swsh4-25"],
+  "card_ids": [
+    "swsh4-25"
+  ],
   "card_names": [
     "Flareon V",
     "Jolteon V",
     "Vaporeon V",
     "Flareon VMAX",
     "Jolteon VMAX",
-    "Vaporeon VMAX"
+    "Vaporeon VMAX",
+    "Pikachu",
+    "greninja ex"
   ]
 }

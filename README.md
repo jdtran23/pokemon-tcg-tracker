@@ -21,7 +21,23 @@ Run with `--debug` to verify. TCGdex is used first (no key needed); pokemontcg.i
 
 ## Watchlist
 
-Edit `config/watchlist.json`:
+**Add/remove from terminal (no Lovable needed):**
+
+```bash
+# Add by name
+.venv/bin/python scripts/add_card.py "Charizard ex" "Pikachu"
+
+# Add by ID (from tcgdex.dev)
+.venv/bin/python scripts/add_card.py --id swsh4-25
+
+# Remove
+.venv/bin/python scripts/remove_card.py "Charizard ex"
+.venv/bin/python scripts/remove_card.py --id swsh4-25
+```
+
+Then run `scripts/run_fetch.py` to load prices for new cards.
+
+**Or edit** `config/watchlist.json` directly:
 
 - **card_ids**: Exact IDs from [pokemontcg.io](https://pokemontcg.io/) (e.g. `swsh4-25` = Vivid Voltage Charizard)
 - **card_names**: Fallback search by name (e.g. `Flareon V`, `Jolteon VMAX`). Uses search API when IDs 404.
@@ -52,6 +68,12 @@ Serves at http://localhost:8000. Docs at http://localhost:8000/docs.
 **Endpoints:**
 - `GET /api/search?q=charizard&limit=15` – search cards by name (for add flow)
 - `GET /api/cards/{id}/trends` – trend metrics for a card
+- `GET /api/signal-rules` – current rules and thresholds
+- `PATCH /api/signal-rules` – update rule thresholds (body: rule_type, thresholds)
+- `GET /api/signal-overrides` – per-card overrides
+- `POST /api/signal-overrides` – add override (body: card_id, rule_type, thresholds)
+- `DELETE /api/signal-overrides` – remove override (?card_id=, ?rule_type=)
+- `POST /api/signals/recompute` – recompute signals (no price fetch; use after changing rules)
 - `GET /api/alerts` – triggered user alerts (in-app)
 - `POST /api/alerts` – add alert (body: card_id, card_name, condition, value)
 - `DELETE /api/alerts?alert_id=` – remove alert
@@ -88,10 +110,12 @@ See **GUIDE-FOR-NON-TECHNICAL-USERS.md** for simple instructions on adding and r
 The app computes trend metrics and buy/sell signals after each refresh:
 
 - **Trends:** `price_change_7d_pct`, `price_change_30d_pct`, `trend` (rising|stable|declining)
-- **Signals:** `signal` (buy|sell|hold), `signal_type` (buy_dip, rising, declining, sell_opportunity)
+- **Signals:** `signal` (buy|sell|hold), `signal_type`, `signal_reason`, `contributing_factors`
+- **Rule types:** strong_buy, below_direct_low, buy_dip, dip_vs_avg7, rising, sell_opportunity, declining, weak_sell, hold_accumulate
+- **User-adjustable:** GET/PATCH `/api/signal-rules` for global thresholds; GET/POST/DELETE `/api/signal-overrides` for per-card overrides
 - **Alerts:** User-configurable price/trend alerts; GET `/api/alerts` returns triggered ones
 
-Rules are in `config/signal_rules.json`. Copy `config/alerts.example.json` to `config/alerts.json` to define alerts.
+Rules: `config/signal_rules.json`. Per-card overrides: `config/signal_overrides.json`. Alerts: copy `config/alerts.example.json` to `config/alerts.json`.
 
 ## Roadmap
 
@@ -99,7 +123,7 @@ Rules are in `config/signal_rules.json`. Copy `config/alerts.example.json` to `c
 - [ ] PriceCharting scraper (graded + sealed)
 - [ ] TCGPlayer sealed scraper
 - [x] Trend analytics (7d/30d/90d, rising/declining)
-- [x] Buy/sell signal markers
+- [x] Buy/sell signal markers (LOVABLE-SIGNAL-BADGES-PROMPT.md, LOVABLE-UI-MARKERS-PROMPT.md)
 
 ## License
 

@@ -30,6 +30,7 @@ def init_db():
         ("signal", "VARCHAR(16)"),
         ("signal_type", "VARCHAR(32)"),
         ("signal_reason", "VARCHAR(256)"),
+        ("signal_contributing", "VARCHAR(512)"),
     ]:
         try:
             with engine.connect() as conn:

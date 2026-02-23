@@ -1,0 +1,9 @@
+{
+  "overrides": [
+    {
+      "card_id": "swsh4-25",
+      "rule_type": "buy_dip",
+      "thresholds": {"buy_dip_ratio": 0.85}
+    }
+  ]
+}
