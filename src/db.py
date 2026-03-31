@@ -38,6 +38,7 @@ def init_db():
     ]:
         try:
             with engine.connect() as conn:
+                # Safe: col_name/col_type are hardcoded literals above, not user input
                 conn.execute(text(f"ALTER TABLE cards ADD COLUMN {col_name} {col_type}"))
                 conn.commit()
         except Exception:

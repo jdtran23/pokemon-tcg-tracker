@@ -1,4 +1,5 @@
 """Shared fixtures for pokemon-tcg-tracker tests."""
+import atexit
 import json
 import os
 import tempfile
@@ -13,6 +14,16 @@ _tmp_db.close()
 os.environ["TCG_TRACKER_DB_OVERRIDE"] = _tmp_db.name
 
 from src.db import Base, engine, init_db, get_session  # noqa: E402
+
+
+def _cleanup_tmp_db():
+    """Dispose engine so SQLite releases the file, then delete it."""
+    engine.dispose()
+    if os.path.exists(_tmp_db.name):
+        os.unlink(_tmp_db.name)
+
+
+atexit.register(_cleanup_tmp_db)
 from src.models import Card, PriceSnapshot  # noqa: E402
 
 
@@ -23,11 +34,13 @@ def _setup_db(tmp_path, monkeypatch):
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
-    # Point JSON config files to tmp_path
+    # Point JSON config files to tmp_path (both api and signals modules)
     monkeypatch.setattr("src.api.WATCHLIST_PATH", tmp_path / "watchlist.json")
     monkeypatch.setattr("src.api.ALERTS_PATH", tmp_path / "alerts.json")
     monkeypatch.setattr("src.api.SIGNAL_RULES_PATH", tmp_path / "signal_rules.json")
     monkeypatch.setattr("src.api.SIGNAL_OVERRIDES_PATH", tmp_path / "signal_overrides.json")
+    monkeypatch.setattr("src.signals.RULES_PATH", tmp_path / "signal_rules.json")
+    monkeypatch.setattr("src.signals.OVERRIDES_PATH", tmp_path / "signal_overrides.json")
 
     # Write default signal rules
     rules = {

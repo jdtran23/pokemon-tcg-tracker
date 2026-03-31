@@ -124,6 +124,7 @@ class TestComputeSignal:
         # Should have contributing factors from other matching rules
         # At minimum buy_dip should fire (8 < 0.9 * ~10)
         assert isinstance(result["contributing_factors"], list)
+        assert len(result["contributing_factors"]) >= 1
 
     def test_nonexistent_card_returns_hold(self, session):
         """Card with no DB record at all → default hold."""
