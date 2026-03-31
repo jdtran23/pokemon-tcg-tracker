@@ -4,10 +4,19 @@ Local app for analyzing Pokemon TCG singles and sealed product trends to make ev
 
 ## Setup
 
+**Windows PowerShell:**
+```powershell
+cd pokemon-tcg-tracker
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**Linux/macOS:**
 ```bash
 cd pokemon-tcg-tracker
 python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -23,14 +32,23 @@ Run with `--debug` to verify. TCGdex is used first (no key needed); pokemontcg.i
 
 **Add/remove from terminal (no Lovable needed):**
 
-```bash
+**Windows PowerShell:**
+```powershell
 # Add by name
-.venv/bin/python scripts/add_card.py "Charizard ex" "Pikachu"
+python scripts/add_card.py "Charizard ex" "Pikachu"
 
 # Add by ID (from tcgdex.dev)
-.venv/bin/python scripts/add_card.py --id swsh4-25
+python scripts/add_card.py --id swsh4-25
 
 # Remove
+python scripts/remove_card.py "Charizard ex"
+python scripts/remove_card.py --id swsh4-25
+```
+
+**Linux/macOS:**
+```bash
+.venv/bin/python scripts/add_card.py "Charizard ex" "Pikachu"
+.venv/bin/python scripts/add_card.py --id swsh4-25
 .venv/bin/python scripts/remove_card.py "Charizard ex"
 .venv/bin/python scripts/remove_card.py --id swsh4-25
 ```
@@ -76,8 +94,17 @@ Serves at http://localhost:8000. Docs at http://localhost:8000/docs.
 - `POST /api/signals/recompute` – recompute signals (no price fetch; use after changing rules)
 - `GET /api/alerts` – triggered user alerts (in-app)
 - `POST /api/alerts` – add alert (body: card_id, card_name, condition, value)
-- `DELETE /api/alerts?alert_id=` – remove alert
-- `GET /api/watchlist` – card IDs and card names in your watchlist
+- `DELETE /aupdates:**
+
+**Windows (Task Scheduler):**
+```powershell
+# Run PowerShell as Administrator, then:
+$action = New-ScheduledTaskAction -Execute "python" -Argument "scripts\run_fetch.py" -WorkingDirectory "C:\Users\jdtra\Projects\pokemon-tcg-tracker"
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue)
+Register-ScheduledTask -TaskName "PokemonTCGFetch" -Action $action -Trigger $trigger -Description "Fetch Pokemon TCG prices every 30 minutes"
+```
+
+**Linux/macOS (cron):**- `GET /api/watchlist` – card IDs and card names in your watchlist
 - `POST /api/watchlist` – add a card (body: `{"card_id": "swsh4-25"}` or `{"card_name": "Charizard ex"}`)
 - `DELETE /api/watchlist` – remove a card (`?card_id=...` or `?card_name=...`)
 - `GET /api/cards` – all cards with latest prices
