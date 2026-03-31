@@ -1,4 +1,5 @@
 """Database schema and session management."""
+import os
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -6,10 +7,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from config.settings import DB_PATH
 
-# Ensure data dir exists
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Allow tests to override DB path via environment variable
+_db_path = Path(os.environ.get("TCG_TRACKER_DB_OVERRIDE", str(DB_PATH)))
 
-engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
+# Ensure data dir exists
+_db_path.parent.mkdir(parents=True, exist_ok=True)
+
+engine = create_engine(f"sqlite:///{_db_path}", echo=False)
 Base = declarative_base()
 Session = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
