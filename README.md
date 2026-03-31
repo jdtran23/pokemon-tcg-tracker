@@ -2,7 +2,23 @@
 
 Local app for analyzing Pokemon TCG singles and sealed product trends to make evidence-based buy/sell decisions. Runs entirely on your machine with free data sources.
 
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | Python 3.9 · FastAPI · SQLAlchemy · SQLite |
+| **Frontend** | React 19 · TypeScript · Vite · Tailwind CSS 4 · shadcn/ui |
+| **Data Fetching** | TanStack Query v5 |
+| **Tables** | TanStack Table v8 |
+| **Charts** | Recharts |
+| **Testing** | pytest (backend) · Vitest + React Testing Library (frontend) |
+| **Price Data** | TCGdex (free, primary) · pokemontcg.io (free key, fallback) |
+
+For detailed rationale on tech stack choices, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Setup
+
+### Backend (Python)
 
 **Windows PowerShell:**
 ```powershell
@@ -20,13 +36,49 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Required for best results:** Get a free API key from [dev.pokemontcg.io](https://dev.pokemontcg.io/) (20k/day vs 1k without). Create `.env` in the project root:
-
+**Optional:** Get a free API key from [dev.pokemontcg.io](https://dev.pokemontcg.io/) (20k/day vs 1k without). Create `.env` in the project root:
 ```
 POKEMON_TCG_API_KEY=your_key_here
 ```
 
-Run with `--debug` to verify. TCGdex is used first (no key needed); pokemontcg.io is fallback.
+### Frontend (React)
+
+```bash
+cd frontend
+npm install
+```
+
+**Development (two terminals):**
+```bash
+# Terminal 1: Start API server
+python scripts/run_api.py
+
+# Terminal 2: Start frontend dev server
+cd frontend
+npm run dev
+```
+
+- API: http://localhost:8000 (Swagger docs at `/docs`)
+- Frontend: http://localhost:5173 (auto-proxies `/api` to backend)
+
+**Production build (single process):**
+```bash
+cd frontend
+npm run build
+cd ..
+python scripts/run_api.py
+```
+Opens at http://localhost:8000 — FastAPI serves both API and UI.
+
+**Run tests:**
+```bash
+# Backend
+pytest
+
+# Frontend
+cd frontend
+npm run test
+```
 
 ## Watchlist
 
@@ -62,65 +114,41 @@ Then run `scripts/run_fetch.py` to load prices for new cards.
 
 ## Run
 
-**One-time fetch:**
-
-```bash
-python scripts/run_fetch.py
-```
-
-**Seed sample data (when fetch fails):**
-
+**Seed sample data (for development):**
 ```bash
 python scripts/seed_data.py
 ```
-Adds 7 sample cards (Charizard + Eeveelutions) with 30 days of fake price history for frontend development.
+Adds 7 sample cards (Charizard + Eeveelutions) with 30 days of fake price history.
 
-**API server (for frontend):**
+**Fetch live prices:**
+```bash
+python scripts/run_fetch.py          # normal
+python scripts/run_fetch.py --debug  # verbose
+```
 
+**API server:**
 ```bash
 python scripts/run_api.py
 ```
+Serves at http://localhost:8000. Swagger docs at http://localhost:8000/docs.
 
-Serves at http://localhost:8000. Docs at http://localhost:8000/docs.
+## API Endpoints
 
-**Endpoints:**
-- `GET /api/search?q=charizard&limit=15` – search cards by name (for add flow)
-- `GET /api/cards/{id}/trends` – trend metrics for a card
-- `GET /api/signal-rules` – current rules and thresholds
-- `PATCH /api/signal-rules` – update rule thresholds (body: rule_type, thresholds)
-- `GET /api/signal-overrides` – per-card overrides
-- `POST /api/signal-overrides` – add override (body: card_id, rule_type, thresholds)
-- `DELETE /api/signal-overrides` – remove override (?card_id=, ?rule_type=)
-- `POST /api/signals/recompute` – recompute signals (no price fetch; use after changing rules)
-- `GET /api/alerts` – triggered user alerts (in-app)
-- `POST /api/alerts` – add alert (body: card_id, card_name, condition, value)
-- `DELETE /aupdates:**
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/cards` | All tracked cards with latest prices + signals |
+| GET | `/api/cards/{id}` | Single card detail |
+| GET | `/api/cards/{id}/trends` | Trend data (7d/30d change, label) |
+| GET | `/api/prices/{card_id}` | Price history (optional: `?variant=`, `?source=`, `?days=`) |
+| GET | `/api/search?q=X` | Search TCGdex by name |
+| GET/POST/DELETE | `/api/watchlist` | Manage watchlist |
+| GET/POST/DELETE | `/api/alerts` | Manage user alerts |
+| GET/PATCH | `/api/signal-rules` | View/update signal thresholds |
+| GET/POST/DELETE | `/api/signal-overrides` | Per-card signal overrides |
+| POST | `/api/signals/recompute` | Recompute signals (no price fetch) |
+| POST | `/api/refresh` | Fetch latest prices + save to DB |
 
-**Windows (Task Scheduler):**
-```powershell
-# Run PowerShell as Administrator, then:
-$action = New-ScheduledTaskAction -Execute "python" -Argument "scripts\run_fetch.py" -WorkingDirectory "C:\Users\jdtra\Projects\pokemon-tcg-tracker"
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration ([TimeSpan]::MaxValue)
-Register-ScheduledTask -TaskName "PokemonTCGFetch" -Action $action -Trigger $trigger -Description "Fetch Pokemon TCG prices every 30 minutes"
-```
-
-**Linux/macOS (cron):**- `GET /api/watchlist` – card IDs and card names in your watchlist
-- `POST /api/watchlist` – add a card (body: `{"card_id": "swsh4-25"}` or `{"card_name": "Charizard ex"}`)
-- `DELETE /api/watchlist` – remove a card (`?card_id=...` or `?card_name=...`)
-- `GET /api/cards` – all cards with latest prices
-- `GET /api/cards/{card_id}` – single card + latest price
-- `GET /api/prices/{card_id}` – price history (optional: `?variant=`, `?source=`, `?days=`)
-- `POST /api/refresh` – fetch latest prices from TCGdex and save to DB. Call from [cron-job.org](https://cron-job.org) (free) to schedule daily updates on Railway.
-
-**Scheduled (every 30 min) via cron:**
-
-```bash
-crontab -e
-# Add:
-*/30 * * * * cd /path/to/pokemon-tcg-tracker && .venv/bin/python scripts/run_fetch.py
-```
-
-Or run manually when your machine is on.
+## Scheduled Updates
 
 ## Data
 
@@ -150,7 +178,8 @@ Rules: `config/signal_rules.json`. Per-card overrides: `config/signal_overrides.
 - [ ] PriceCharting scraper (graded + sealed)
 - [ ] TCGPlayer sealed scraper
 - [x] Trend analytics (7d/30d/90d, rising/declining)
-- [x] Buy/sell signal markers (LOVABLE-SIGNAL-BADGES-PROMPT.md, LOVABLE-UI-MARKERS-PROMPT.md)
+- [x] Buy/sell signal engine (9 rules, priority-ordered)
+- [x] React frontend dashboard
 
 ## License
 
