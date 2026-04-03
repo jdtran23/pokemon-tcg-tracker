@@ -82,7 +82,7 @@ npm run test
 
 ## Watchlist
 
-**Add/remove from terminal (no Lovable needed):**
+**Add/remove from terminal:**
 
 **Windows PowerShell:**
 ```powershell
@@ -143,6 +143,7 @@ Serves at http://localhost:8000. Swagger docs at http://localhost:8000/docs.
 | GET | `/api/search?q=X` | Search TCGdex by name |
 | GET/POST/DELETE | `/api/watchlist` | Manage watchlist |
 | GET/POST/DELETE | `/api/alerts` | Manage user alerts |
+| GET | `/api/alerts/config` | All configured alerts with triggered status |
 | GET/PATCH | `/api/signal-rules` | View/update signal thresholds |
 | GET/POST/DELETE | `/api/signal-overrides` | Per-card signal overrides |
 | POST | `/api/signals/recompute` | Recompute signals (no price fetch) |

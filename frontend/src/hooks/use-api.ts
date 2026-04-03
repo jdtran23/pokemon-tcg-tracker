@@ -18,6 +18,7 @@ export const queryKeys = {
   prices: (cardId: string) => ["prices", cardId] as const,
   watchlist: ["watchlist"] as const,
   alerts: ["alerts"] as const,
+  alertsConfig: ["alerts", "config"] as const,
   signalRules: ["signal-rules"] as const,
   signalOverrides: ["signal-overrides"] as const,
   search: (q: string) => ["search", q] as const,
@@ -112,12 +113,20 @@ export function useAlerts() {
   });
 }
 
+export function useAlertsConfig() {
+  return useQuery({
+    queryKey: queryKeys.alertsConfig,
+    queryFn: api.getAlertsConfig,
+  });
+}
+
 export function useAddAlert() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.addAlert,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.alerts });
+      void qc.invalidateQueries({ queryKey: queryKeys.alertsConfig });
     },
   });
 }
@@ -128,6 +137,7 @@ export function useRemoveAlert() {
     mutationFn: api.removeAlert,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.alerts });
+      void qc.invalidateQueries({ queryKey: queryKeys.alertsConfig });
     },
   });
 }

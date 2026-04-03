@@ -6,6 +6,7 @@
 
 import type {
   AlertsResponse,
+  AlertsConfigResponse,
   Card,
   CardTrendsResponse,
   CardsResponse,
@@ -121,6 +122,10 @@ export function removeFromWatchlist(params: {
 
 export function getAlerts(): Promise<AlertsResponse> {
   return get<AlertsResponse>("/api/alerts");
+}
+
+export function getAlertsConfig(): Promise<AlertsConfigResponse> {
+  return get<AlertsConfigResponse>("/api/alerts/config");
 }
 
 export function addAlert(body: {

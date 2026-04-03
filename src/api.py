@@ -1,6 +1,8 @@
 """FastAPI server that reads from the SQLite DB."""
 import json
+import os
 import re
+import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
@@ -10,12 +12,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from sqlalchemy import func
+
 from config.settings import TCGDEX_BASE_URL
 from src.db import get_session, init_db
 from src.models import Card, PriceSnapshot
 from src.fetcher import run_fetch
 from src.trends import compute_trends
-from src.alerts import get_triggered_alerts
+from src.alerts import get_triggered_alerts, check_alert
 from src.signals import update_card_signals
 
 app = FastAPI(
@@ -40,6 +44,58 @@ SIGNAL_RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "signal_
 SIGNAL_OVERRIDES_PATH = Path(__file__).resolve().parent.parent / "config" / "signal_overrides.json"
 
 
+def _atomic_json_save(path: Path, data: dict) -> None:
+    """Write JSON atomically: write to temp file, then os.replace().
+
+    Prevents corruption from partial writes or crashes mid-write.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, path)
+    except BaseException:
+        # Clean up temp file on any failure
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _latest_snapshot_by_card(session) -> dict:
+    """Batch-fetch the latest PriceSnapshot per card_id in 2 queries.
+
+    Returns dict mapping card_id -> PriceSnapshot. When multiple snapshots
+    share the same max date (different variant/source), the first encountered
+    wins (deterministic via descending id).
+    """
+    latest_dates = (
+        session.query(
+            PriceSnapshot.card_id,
+            func.max(PriceSnapshot.snapshot_date).label("max_date"),
+        )
+        .group_by(PriceSnapshot.card_id)
+        .subquery()
+    )
+    latest_snapshots = (
+        session.query(PriceSnapshot)
+        .join(
+            latest_dates,
+            (PriceSnapshot.card_id == latest_dates.c.card_id)
+            & (PriceSnapshot.snapshot_date == latest_dates.c.max_date),
+        )
+        .order_by(PriceSnapshot.id.desc())
+        .all()
+    )
+    result: dict = {}
+    for s in latest_snapshots:
+        if s.card_id not in result:
+            result[s.card_id] = s
+    return result
+
+
 def _image_url_for_card(card: Card) -> Optional[str]:
     """Return image URL from DB, or derive TCGdex URL when null. TCGdex hosts free card art."""
     if card.image_url:
@@ -62,9 +118,7 @@ def _load_watchlist_full() -> dict:
 
 
 def _save_watchlist(data: dict) -> None:
-    WATCHLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(WATCHLIST_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_json_save(WATCHLIST_PATH, data)
 
 
 @app.get("/")
@@ -103,8 +157,7 @@ def update_signal_rule_thresholds(body: UpdateRuleThresholds):
             break
     if not updated:
         raise HTTPException(status_code=404, detail=f"Rule type '{body.rule_type}' not found")
-    with open(SIGNAL_RULES_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_json_save(SIGNAL_RULES_PATH, data)
     updated_rule = next(r for r in rules if r.get("type") == body.rule_type)
     return {"status": "ok", "rule_type": body.rule_type, "thresholds": updated_rule["thresholds"]}
 
@@ -136,9 +189,7 @@ def add_signal_override(body: AddOverride):
     overrides = [o for o in overrides if not (o.get("card_id") == body.card_id and o.get("rule_type") == body.rule_type)]
     overrides.append({"card_id": body.card_id, "rule_type": body.rule_type, "thresholds": body.thresholds})
     data["overrides"] = overrides
-    SIGNAL_OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(SIGNAL_OVERRIDES_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_json_save(SIGNAL_OVERRIDES_PATH, data)
     return {"status": "ok", "card_id": body.card_id, "rule_type": body.rule_type}
 
 
@@ -159,8 +210,7 @@ def remove_signal_override(card_id: str = None, rule_type: str = None):
     else:
         raise HTTPException(status_code=400, detail="Provide card_id and/or rule_type")
     data["overrides"] = overrides
-    with open(SIGNAL_OVERRIDES_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_json_save(SIGNAL_OVERRIDES_PATH, data)
     return {"status": "ok"}
 
 
@@ -315,14 +365,11 @@ def get_cards():
     session = get_session()
     try:
         cards = session.query(Card).all()
+        latest_by_card = _latest_snapshot_by_card(session)
+
         result = []
         for c in cards:
-            latest = (
-                session.query(PriceSnapshot)
-                .filter(PriceSnapshot.card_id == c.id)
-                .order_by(PriceSnapshot.snapshot_date.desc())
-                .first()
-            )
+            latest = latest_by_card.get(c.id)
             prices = None
             if latest:
                 prices = {
@@ -427,16 +474,12 @@ def get_alerts():
     init_db()
     session = get_session()
     try:
-        # Build cards_by_id from catalog for alert checks
+        latest_by_card = _latest_snapshot_by_card(session)
+
         cards = session.query(Card).all()
         cards_by_id = {}
         for c in cards:
-            latest = (
-                session.query(PriceSnapshot)
-                .filter(PriceSnapshot.card_id == c.id)
-                .order_by(PriceSnapshot.snapshot_date.desc())
-                .first()
-            )
+            latest = latest_by_card.get(c.id)
             cards_by_id[c.id] = {
                 "latest_price": {
                     "market": latest.market,
@@ -446,6 +489,46 @@ def get_alerts():
             }
         triggered = get_triggered_alerts(session, cards_by_id)
         return {"alerts": triggered}
+    finally:
+        session.close()
+
+
+@app.get("/api/alerts/config")
+def get_alerts_config():
+    """Return ALL configured alerts with a triggered boolean per alert."""
+    init_db()
+    session = get_session()
+    try:
+        # Load all alerts from config (including disabled)
+        if not ALERTS_PATH.exists():
+            return {"alerts": []}
+        with open(ALERTS_PATH) as f:
+            data = json.load(f)
+        all_alerts = data.get("alerts", [])
+
+        # Build card data for trigger checking
+        latest_by_card = _latest_snapshot_by_card(session)
+        cards = session.query(Card).all()
+        cards_by_id = {}
+        for c in cards:
+            latest = latest_by_card.get(c.id)
+            cards_by_id[c.id] = {
+                "latest_price": {
+                    "market": latest.market,
+                    "mid": latest.mid,
+                    "low": latest.low,
+                } if latest else None,
+            }
+
+        # Annotate each alert with triggered status
+        result = []
+        for a in all_alerts:
+            cid = a.get("card_id", "")
+            card_data = cards_by_id.get(cid)
+            trends = compute_trends(cid, session) if cid else {}
+            triggered = check_alert(a, card_data, trends)
+            result.append({**a, "triggered": triggered})
+        return {"alerts": result}
     finally:
         session.close()
 
@@ -477,9 +560,7 @@ def add_alert(body: AddAlert):
         "enabled": True,
     })
     data["alerts"] = alerts
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_json_save(path, data)
     return {"status": "ok", "id": new_id}
 
 
@@ -495,8 +576,7 @@ def remove_alert(alert_id: str):
     if len(alerts) == len(data.get("alerts", [])):
         raise HTTPException(status_code=404, detail="Alert not found")
     data["alerts"] = alerts
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    _atomic_json_save(path, data)
     return {"status": "ok"}
 
 
@@ -538,3 +618,11 @@ def get_prices(
         return {"card_id": card_id, "prices": result}
     finally:
         session.close()
+
+
+# Static file serving — MUST be last (catch-all)
+from fastapi.staticfiles import StaticFiles
+
+_frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _frontend_dist.exists():
+    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True))

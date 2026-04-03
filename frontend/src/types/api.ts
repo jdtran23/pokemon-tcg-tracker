@@ -72,6 +72,14 @@ export interface Alert {
   enabled: boolean;
 }
 
+export interface AlertConfig extends Alert {
+  triggered: boolean;
+}
+
+export interface AlertsConfigResponse {
+  alerts: AlertConfig[];
+}
+
 export interface SignalRule {
   type: string;
   signal: string;
